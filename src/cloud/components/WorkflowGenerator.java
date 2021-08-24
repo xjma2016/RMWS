@@ -2,14 +2,10 @@ package cloud.components;
 
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
@@ -36,7 +32,7 @@ public class WorkflowGenerator {
 			System.out.println(e.getMessage());
 		}
 		
-		//Generate the workflow set and write it into Parameters.ByteArrayOutputStream //"generatedWorkflow.txt"
+		//Generate the workflow set and write it into Parameters.ByteArrayOutputStream //into "generatedWorkflow.txt"
 		List<Workflow> workflowList = new ArrayList<Workflow>(); //The set of generated workflows
 		int arrivalTime = 0; //The arrive time of each workflow
 		int workflowID = 0; //The ID used in task and workflow
@@ -47,23 +43,20 @@ public class WorkflowGenerator {
 				continue;
 			}
 			else { //The generate number is not zero
-				
 				//Generate gtNum workflows by copy the tasks in template
 				for(int i=0;i<gtNum;i++) {
 					int wkTemplateNum = (int)(Math.random()*Parameters.templateNum); //Randomly choose a workflow template
 					Workflow selectedWorkflow = wtList.get(wkTemplateNum);
-					
 					List<Task> tempTaskList = new ArrayList<Task>(); //Store the task list of the chosen workflow template
 					List<Edge> tempEdgeList = new ArrayList<Edge>(); //Store the edge list of the chosen workflow template
 					HashMap<String,Task> tempTask = new HashMap<String,Task>(); //Store the task by taskID
 					
 					//Copy each task, their inEdges and outEdges by create new task
 					for(Task t : selectedWorkflow.getTaskList()) { //Get each task in the chosen workflow template
-						
 						//Copy the base parameters from t to copyTask
 						Task copyTask = new Task(t.getTaskID(),workflowID,t.getBaseExecuteTime());
 												
-						//Calculate the real execution time
+						//Calculate the deviate task execution time
 						double standardDeviation =  copyTask.getBaseExecuteTime()*Parameters.standardDeviation;
 						double baseExecuteTimeWithDeviation = NormalDistribution(copyTask.getBaseExecuteTime(),standardDeviation);
 						if(baseExecuteTimeWithDeviation < 0 || baseExecuteTimeWithDeviation < copyTask.getBaseExecuteTime()) {
@@ -176,21 +169,4 @@ public class WorkflowGenerator {
 		return result;
 	}
 	
-	/**
-	 * Generator for normal distribution
-	 * @param average
-	 * @param deviance
-	 * @return 
-	 */
-	public static double NormalDistributionOtherWay(double average,double deviance)
-	{
-		double Pi=3.1415926535;
-		double r1=Math.random();
-		Math.random();Math.random();Math.random();Math.random();Math.random();
-		Math.random();Math.random();
-		double r2=Math.random();
-		double u=Math.sqrt((-2)*Math.log(r1))*Math.cos(2*Pi*r2);
-		double z=average+u*Math.sqrt(deviance);
-		return z;
-	}
 }

@@ -5,13 +5,11 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-import cloud.configurations.Parameters;
-
 public class Check {
 	public static SimpleDateFormat cTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"); //Current Time
 	
-	/**Check the task and edge in workflow*/
-	public static void checkWorkflow(Workflow workflow) {
+	/**Check the task and edge in a workflow*/
+	public void checkWorkflow(Workflow workflow) {
 		List<Task> taskList = workflow.getTaskList();
 		for(int i=0;i<taskList.size();i++) {
 			Task task = taskList.get(i);
@@ -30,8 +28,8 @@ public class Check {
 		}
 	}
 	
-	/**Check if there has a unfinish task*/
-	public static void checkTaskParameter(List<Task> taskList) {
+	/**Check if there has task parameters not calculated*/
+	public void checkTaskParameter(List<Task> taskList) {
 		int a = 0;
 		List<Task> tlist = new ArrayList<Task>();
 		for(int j=0;j<taskList.size();j++) {
@@ -48,17 +46,15 @@ public class Check {
 			if(t.getSubDeadline() == -1) {
 				a++;
 				tlist.add(t);
-				//throw new IllegalArgumentException("Task's SubDeadline is not calculate!" + t.getTaskID());
 			}
 		}
 		if(a>0) {
-			
-			//throw new IllegalArgumentException("Task's SubDeadline is not calculate!" + a);
+			throw new IllegalArgumentException("Task's SubDeadline is not calculate!" + a);
 		}
 	}
 	
-	/**Check if there has a unfinish task*/
-	public static void checkUnfinishTaskAndVM(List<Workflow> workflowList, List<VM> vmList)  {
+	/**Check if there has unfinished task or VM*/
+	public void checkUnfinishTaskAndVM(List<Workflow> workflowList, List<VM> vmList)  {
 		for(int m=0;m<workflowList.size();m++) {
 			Workflow w = workflowList.get(m);
 			List<Task> tt = w.getTaskList();
@@ -101,7 +97,7 @@ public class Check {
 	}
 	
 	/**Print text*/
-	public static void printText(String text)  {
+	public void printText(String text)  {
 		System.out.println(text + cTime.format(new Date()) );
 	}
 }

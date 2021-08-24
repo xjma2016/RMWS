@@ -6,6 +6,10 @@ import cloud.components.*;
 
 public interface Scheduler {
 	
-	public void schedule(List<Workflow> workflowList); //Run the schedule for each workflow list
-	public String getName(); //Get the algorithm's name
+	/**Run the schedule on the workflow list */
+	public void schedule(List<Workflow> workflowList); 
+	
+	/**Get the algorithm's name */
+	public String getName(); 
+	
 }

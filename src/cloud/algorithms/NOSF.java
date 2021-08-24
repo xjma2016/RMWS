@@ -12,7 +12,6 @@ import cloud.components.ExperimentResult;
 import cloud.components.Task;
 import cloud.components.VM;
 import cloud.components.Workflow;
-import cloud.components.WorkflowGenerator;
 import cloud.configurations.Parameters;
 
 /**Programming according to article 
@@ -20,8 +19,6 @@ Online Multi-Workflow Scheduling under Uncertain Task Execution Time in IaaS Clo
 DOI: 10.1109/TCC.2019.2906300*/
 
 public class NOSF implements Scheduler {
-
-
 	private List<Workflow> experimentWorkflow; //The workflow list;
 	private List<Task> taskPool; //The unprepared tasks list
 	private List<Task> readyTaskList; //The ready task list 
@@ -31,7 +28,8 @@ public class NOSF implements Scheduler {
 	private double currentTime; //The current time in the scheduling process
 	
 	List<Task> scheduledTaskList ;
-		
+	Check check = new Check();
+	
 	public void schedule(List<Workflow> workflowList) {
 		//Initialize
 		init(workflowList);
@@ -39,35 +37,16 @@ public class NOSF implements Scheduler {
 		
 		//Record the runtime of scheduling algorithm
 		long totalScheduleTime = 0;
-		long startTime01 = System.currentTimeMillis();
-			    
-		//Calculate the earliest start/completion time, latest completion time, subDeadline of tasks in the workflow list
-		calculateTaskParameter(experimentWorkflow);	
-		//Check.printText("calculateTaskParameter at: ");	  		
-		
-	/*	for(int m=0;m<experimentWorkflow.size();m++) {
-			Workflow wk = experimentWorkflow.get(m);
-			List<Task> taskList = wk.getTaskList();
-			if(taskList.size()<55 && wk.getWorkflowName().equals("LIGO-50")) {
-				System.out.print("NOSF:  ");
-				for(int n=0;n<taskList.size();n++) {
-					System.out.print( taskList.get(n).getTaskID() + "--" + taskList.get(n).getSubDeadline() + "/");
-				}
-			}
-		}*/
-		
-		long endTime01 = System.currentTimeMillis();
-		totalScheduleTime = totalScheduleTime + (endTime01 - startTime01);
 		
 		//Schedule each workflow in workflowList
 		for(int i=0;i<experimentWorkflow.size();i++) {
-			//Set the current time as the ith workflow's arrival time 
+			//Set the current time as the i-th workflow's arrival time 
 			currentTime = experimentWorkflow.get(i).getArrivalTime();
 			
-			//Get the workflows that has the same arrivetime
+			//Get the workflows that has the same arrive time
 			List<Workflow> workflowWithSameArrivetime = new ArrayList<Workflow>();
-			workflowWithSameArrivetime.add(experimentWorkflow.get(i)); //Add the ith workflow
-			for(int j=i+1;j<experimentWorkflow.size();j++) { //Because workflows are ascending by arrivaltime, just compare the workflows after i
+			workflowWithSameArrivetime.add(experimentWorkflow.get(i)); //Add the i-th workflow
+			for(int j=i+1;j<experimentWorkflow.size();j++) { //Because workflows are ascending by arrival time, just compare the workflows after i
 				if(experimentWorkflow.get(j).getArrivalTime() == experimentWorkflow.get(i).getArrivalTime()) {
 					workflowWithSameArrivetime.add(experimentWorkflow.get(j));
 					i++; //Update i to the next workflow that has different arriveTime
@@ -77,19 +56,17 @@ public class NOSF implements Scheduler {
 				}
 			}
 			
+			long startTime01 = System.currentTimeMillis();
+		    
+			//Calculate the earliest start/completion time, latest completion time, subDeadline of tasks in the workflow list
+			calculateTaskParameter(workflowWithSameArrivetime);	
+			
 			//Get the ready tasks from workflowsWithSameArrivetime
 			readyTaskList = getReadyTask(workflowWithSameArrivetime);
 			Collections.sort(readyTaskList, new compareTaskByEarliestStartTime()); //Sort the ready tasks by the earliest start time
-			//Check.printText("readyTaskList at: ");	  
-			
-			long startTime02 = System.currentTimeMillis();
 			
 			//Schedule the ready tasks to active VMs or New VMs
 			scheduleTaskToVM(readyTaskList, activeVMList);
-			//Check.printText("scheduleTaskToVM at: ");	
-			
-			long endTime02 = System.currentTimeMillis();
-			totalScheduleTime = totalScheduleTime + (endTime02 - startTime02);		
 			
 			//Add all unready tasks into the task pool
 			for(Workflow w : workflowWithSameArrivetime) {
@@ -99,6 +76,9 @@ public class NOSF implements Scheduler {
 					}
 				}
 			}
+			
+			long endTime01 = System.currentTimeMillis();
+			totalScheduleTime = totalScheduleTime + (endTime01 - startTime01);		
 			
 			//Get the next arrival time,
 			double nextArrivalTime = Integer.MAX_VALUE;
@@ -116,18 +96,19 @@ public class NOSF implements Scheduler {
 			for(VM vm : activeVMList) { //VM's status can be classified as: wait task/execute task/idle
 				double actualFinishTime = vm.getExecuteTask().getActualFinishTime(); //The execute task's actual finish time
 				
-				if(actualFinishTime != -1) { //The vm has an execute task, no need to consider the wait task which will be execute once the execute task finished
+				if(actualFinishTime != -1) { //The VM has an execute task
 					if(nextFinishTime > actualFinishTime) {
 						nextFinishTime = actualFinishTime;
 						nextFinishVM = vm;
 					}
 				}
-				else { //The vm is idle
+				else { //The VM is idle
+					//Set the release time when the whole lease time is integer multiple of unitTime
 					double tempNextReleaseTime = Integer.MAX_VALUE;
-					if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { //The vm will be released when the whole lease time is integer multiple of unitTime
+					if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { 
 						tempNextReleaseTime = currentTime;
 					}
-					else { //Set the next integer multiple of unit time as the next release time
+					else { 
 						int unitTimes = (int)Math.ceil((currentTime - vm.getLeaseStartTime())/Parameters.unitTime);
 						tempNextReleaseTime = vm.getLeaseStartTime() + unitTimes*Parameters.unitTime;
 					}
@@ -142,13 +123,15 @@ public class NOSF implements Scheduler {
 			while(nextArrivalTime >= nextFinishTime || nextArrivalTime > nextReleaseTime) {
 				//update the VM and its execute task, which have the min finish time
 				if(nextFinishTime <= nextReleaseTime) {
+					//Set the execute task as finished
 					Task nextFinishTask = nextFinishVM.getExecuteTask();
 					nextFinishTask.setIsFinished(true);
+					nextFinishVM.setExecuteTask(new Task("init", -1, -1));
 					currentTime = nextFinishTask.getActualFinishTime(); //Set the current time as the next finish time
 					
 					if(!nextFinishVM.getWaitTask().getTaskID().equals("init")) { //The next finish VM has a wait task, then execute it
 						Task nextExecuteTask = nextFinishVM.getWaitTask();
-						nextFinishVM.setWaitTask(new Task("init", -1, -1)); //Init a new wait task after the wait task is execute
+						nextFinishVM.setWaitTask(new Task("init", -1, -1)); //Set the wait task as init
 						double nextStartTime = calculateActualStartTime(nextExecuteTask, nextFinishVM); //Get the actual start time of next execute task
 						double nextExecuteTime = nextExecuteTask.getBaseExecuteTimeWithDeviation()*nextFinishVM.getVMExecuteTimeFactor();
 						nextExecuteTask.setActualStartTime(nextStartTime);
@@ -160,20 +143,25 @@ public class NOSF implements Scheduler {
 						nextFinishVM.setExecuteTask(new Task("init", -1, -1));
 					}
 					
+					long startTime02 = System.currentTimeMillis();
+					
 					//Get the ready children of the next finish task
 					List<Task> readySucessorList = getReadySucessor(nextFinishTask);
+					
 					calculateSuccessorParameter(readySucessorList);
 					
-					long startTime03 = System.currentTimeMillis();
+					//Sort the ready successor tasks by the earliest start time
+					Collections.sort(readySucessorList, new compareTaskByEarliestStartTime()); 
 					
 					//Schedule the ready tasks to active VMs or New VMs, and move them from task pool
 					scheduleTaskToVM(readySucessorList, activeVMList);
-					//Check.printText("scheduleSucessorToVM at: ");	
 					
-					long endTime03 = System.currentTimeMillis();
-					totalScheduleTime = totalScheduleTime + (endTime03 - startTime03);
-					
+					//Remove the assign tasks from task pool
 					taskPool.removeAll(readySucessorList);
+					
+					long endTime02 = System.currentTimeMillis();
+					totalScheduleTime = totalScheduleTime + (endTime02 - startTime02);
+					
 				}
 				
 				//Release VM
@@ -197,22 +185,23 @@ public class NOSF implements Scheduler {
 				nextReleaseVM = null; //The VM that will be released firstly
 				nextReleaseTime = Integer.MAX_VALUE; //The firstly released time
 				
-				//Get the above four parameters in the active VM list
+				//Re-update the above four parameters in the active VM list
 				for(VM vm : activeVMList) { //VM's status can be classified as: wait task/execute task/idle
 					double actualFinishTime = vm.getExecuteTask().getActualFinishTime(); //The execute task's actual finish time
 					
-					if(actualFinishTime != -1) { //The vm has an execute task, no need to consider the wait task which will be execute once the execute task finished
+					if(actualFinishTime != -1) { //The VM has an execute task
 						if(nextFinishTime > actualFinishTime) {
 							nextFinishTime = actualFinishTime;
 							nextFinishVM = vm;
 						}
 					}
-					else { //The vm is idle
+					else { //The VM is idle
+						//Set the release time when the whole lease time is integer multiple of unitTime
 						double tempNextReleaseTime = Integer.MAX_VALUE;
-						if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { //The vm will be released when the whole lease time is integer multiple of unitTime
+						if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { 
 							tempNextReleaseTime = currentTime;
 						}
-						else { //Set the next integer multiple of unit time as the next release time
+						else { 
 							int unitTimes = (int)Math.ceil((currentTime - vm.getLeaseStartTime())/Parameters.unitTime);
 							tempNextReleaseTime = vm.getLeaseStartTime() + unitTimes*Parameters.unitTime;
 						}
@@ -221,7 +210,7 @@ public class NOSF implements Scheduler {
 							nextReleaseVM = vm;
 						}
 					}
-				} //End for, get the four parameters
+				} //End for, re-update the four parameters
 				
 				//End while if can not find a next finish/release VM before nextArrivalTime, 
 				if(nextArrivalTime==Integer.MAX_VALUE && nextFinishTime==Integer.MAX_VALUE && nextReleaseTime==Integer.MAX_VALUE) {
@@ -233,7 +222,7 @@ public class NOSF implements Scheduler {
 		} //End for, schedule each workflow in workflowList
 		
 		//Check the tasks and VMs status
-		Check.checkUnfinishTaskAndVM(experimentWorkflow,allLeaseVMList);
+		check.checkUnfinishTaskAndVM(experimentWorkflow,allLeaseVMList);
 		
 		//Calculate the experimental results
 		ExperimentResult.calculateExperimentResult("NOSF", allLeaseVMList, experimentWorkflow, totalScheduleTime);
@@ -248,7 +237,7 @@ public class NOSF implements Scheduler {
 		
 	}
 	
-    /**Init the global parameter, generate deviation values of task base execution time and base transfer data*/
+    /**Init the lists*/
 	public void init(List<Workflow> workflowList) {
 		this.experimentWorkflow = workflowList;
 		taskPool = new ArrayList<Task>(); 
@@ -275,8 +264,7 @@ public class NOSF implements Scheduler {
 					Task t = taskList.get(j);
 					if(t.getInEdges().size() == 0 && t.getEarliestFinishTime() == -1) { //The uncalculate entry task
 						t.setEarliestStartTime(workflowArriveTime);
-						//double executeTimeWithDeviation = t.getBaseExecuteTime() + t.getBaseExecuteTime()*Parameters.standardDeviation;
-						double perExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; //The predicted execute time of scheduleTask on the fastest vm
+						double perExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; 
 						double earliestFinishTime = t.getEarliestStartTime() + perExecuteTime;
 						t.setEarliestFinishTime(earliestFinishTime);
 						calculateNum++;
@@ -300,8 +288,7 @@ public class NOSF implements Scheduler {
 							}
 							
 							t.setEarliestStartTime(maxEarliestStartTime); //Set t's earliest start time
-							//double executeTimeWithDeviation =  t.getBaseExecuteTime() + t.getBaseExecuteTime()*Parameters.standardDeviation;
-							double perExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; //The predicted execute time of scheduleTask on the fastest vm
+							double perExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; 
 							t.setEarliestFinishTime(maxEarliestStartTime + perExecuteTime);
 							calculateNum++;
 						} //End if
@@ -330,10 +317,9 @@ public class NOSF implements Scheduler {
 						}
 						
 						if(isAllChildrenCalculated && t.getLatestFinishTime() == -1) { //If all children of task t have been calculated, calculated t' latest completion time
-							for(Edge e : t.getOutEdges()) { //Caculate min start time from each child
+							for(Edge e : t.getOutEdges()) { //Calculate min start time from each child
 								double baseTransferDateTime = e.getTransDataSize()/Parameters.bandwidth;
-								//double executeTimeWithDeviation =  e.getChildTask().getBaseExecuteTime() + e.getChildTask().getBaseExecuteTime()*Parameters.standardDeviation;
-								double perExecuteTime = e.getChildTask().getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; //The predicted execute time of scheduleTask on the fastest vm
+								double perExecuteTime = e.getChildTask().getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; 
 								double tempLatestFinishTime = e.getChildTask().getLatestFinishTime() - perExecuteTime - baseTransferDateTime; 
 								if(minLatestFinishTime > tempLatestFinishTime) {
 									minLatestFinishTime = tempLatestFinishTime;
@@ -356,10 +342,6 @@ public class NOSF implements Scheduler {
 				}
 			}
 			
-			if(taskList.size()<55 && workflow.getWorkflowName().equals("LIGO-50")) {
-				Check.checkTaskParameter(taskList);
-			}
-			
 			for(int j=0;j<exitTaskList.size();j++){
 				Task task = exitTaskList.get(j);
 				ArrayList<Task> pcpList = getPCP(task); //Get the whole PCP of an exit task
@@ -373,7 +355,8 @@ public class NOSF implements Scheduler {
 				
 				while(pcpStack.size()>0) {
 					Task t = pcpStack.pop();
-					for(Edge e : t.getInEdges()) {//If t has unCalculate parent, should add it into pcpStack again, otherwise will miss tasks on t's subPCP
+					//If t has unCalculate parent, should add it into pcpStack again, otherwise will miss tasks on t's subPCP
+					for(Edge e : t.getInEdges()) {
 						if(!pcpStack.contains(t) && e.getParentTask().getSubDeadline() == -1) {
 							pcpStack.push(t);
 						}
@@ -387,10 +370,6 @@ public class NOSF implements Scheduler {
 						}
 					}
 				}
-			}
-			
-			if(taskList.size()<55 && workflow.getWorkflowName().equals("LIGO-50")) {
-				Check.checkTaskParameter(taskList);
 			}
 			
 		} //End for, each workflow in the list
@@ -412,7 +391,7 @@ public class NOSF implements Scheduler {
 				}
 				if(parent != null) {
 					double tempEFTAndTT = parent.getEarliestFinishTime() + e.getTransDataSize()/Parameters.bandwidth;
-					if(maxEFTAndTT < tempEFTAndTT){
+					if(maxEFTAndTT<tempEFTAndTT){
 						maxEFTAndTT = tempEFTAndTT;
 						criticalParent = parent;
 					}
@@ -433,15 +412,15 @@ public class NOSF implements Scheduler {
 	/**Calculate subdeadline for each task in PCP, notice the pcpList has reverse order*/
 	public void calculateSubDeadline(List<Task> pcpList) {
 		int lastNum = pcpList.size()-1;
-		double firstEST = pcpList.get(lastNum).getEarliestStartTime(); //The first task' earlist start time, notice the last task in list is the first
-		double lastEFT = pcpList.get(0).getEarliestFinishTime(); //The last task' earlist completion time, notice the first task in list is the last
+		double firstEST = pcpList.get(lastNum).getEarliestStartTime(); //The first task' earliest start time, notice the last task in list is the first
+		double lastEFT = pcpList.get(0).getEarliestFinishTime(); //The last task' earliest completion time, notice the first task in list is the last
 		double psd = pcpList.get(0).getLatestFinishTime() - pcpList.get(lastNum).getEarliestStartTime(); //The path subdeadline
 		for(int k=0;k<pcpList.size();k++) {
 			Task t = pcpList.get(k);
-			double currentEFT = t.getEarliestFinishTime(); //The current task's earlist completion time
+			double currentEFT = t.getEarliestFinishTime(); //The current task's earliest completion time
 			double subDeadline = firstEST + ((currentEFT - firstEST)/(lastEFT - firstEST)) * psd;
 			t.setSubDeadline(subDeadline);
-			t.setThelta(subDeadline-t.getEarliestStartTime()); //Calculate the difference between subDeadline and earlist start time
+			t.setThelta(subDeadline-t.getEarliestStartTime()); //Calculate the difference between subDeadline and earliest start time
 		}
 	}
 	
@@ -454,9 +433,9 @@ public class NOSF implements Scheduler {
 		while(calculateNum < successorList.size()) {
 			for(int j=0;j<successorList.size();j++){
 				Task t = successorList.get(j);
-				double maxEarliestStartTime = Integer.MIN_VALUE; //Store the max start time of task t, calculate by the sum of earliest finish time and transfer data time between t and t's parent
+				double maxEarliestStartTime = Integer.MIN_VALUE; //Store the max start time of task t
 				
-				for(Edge e : t.getInEdges()) { //Caculate max start time from each parent
+				for(Edge e : t.getInEdges()) { //Calculate max start time from each parent
 					double baseTransferDateTime = e.getTransDataSize()/Parameters.bandwidth;
 					double tempEarlistStartTime = e.getParentTask().getActualFinishTime() + baseTransferDateTime; 
 					if(maxEarliestStartTime < tempEarlistStartTime) {
@@ -465,8 +444,7 @@ public class NOSF implements Scheduler {
 				}
 				
 				t.setEarliestStartTime(maxEarliestStartTime); //Set the max start time as task's earliest start time
-				//double executeTimeWithDeviation =  t.getBaseExecuteTime() + t.getBaseExecuteTime()*Parameters.standardDeviation;
-				double perExecuteTime = t.getBaseExecuteTime() * Parameters.speedFactor[fastestVMType]; //The predicted execute time of scheduleTask on the fastest vm
+				double perExecuteTime = t.getBaseExecuteTime() * Parameters.speedFactor[fastestVMType]; 
 				t.setEarliestFinishTime(maxEarliestStartTime + perExecuteTime);
 				calculateNum++;
 			} //End for, calculate task's earliest start/completion time from the entry task to the exit task 
@@ -528,12 +506,12 @@ public class NOSF implements Scheduler {
 			
 			//Calculate the task's predicated finish time and cost on active VM
 			for(VM vm : activeVMList) {
-				if(vm.getWaitTask().getTaskID().equals("init")) {//Only check the VM has no wait task}
-					double activeVMStartTime = calculatePredicateStartTime(scheduleTask,vm); //Get the predicate start time on vm
+				if(vm.getWaitTask().getTaskID().equals("init")) {//Only check the VM has no wait task
+					double activeVMStartTime = calculatePredicateStartTime(scheduleTask,vm); //Get the predicate start time on VM
 					
-					//Calculate the predicted completion time and cost if assign scheduleTask on vm 
+					//Calculate the predicted completion time and cost if assign scheduleTask on VM
 					double executeTimeWithDeviation =  scheduleTask.getBaseExecuteTime() + scheduleTask.getBaseExecuteTime()*Parameters.standardDeviation;
-					double perExecuteTime = executeTimeWithDeviation*vm.getVMExecuteTimeFactor(); //The predicted execute time of scheduleTask on vm
+					double perExecuteTime = executeTimeWithDeviation*vm.getVMExecuteTimeFactor(); //The predicted execute time of scheduleTask on VM
 					double preFinishTime = activeVMStartTime + perExecuteTime;
 					double preCost = perExecuteTime * vm.getVMPrice();
 					
@@ -561,7 +539,7 @@ public class NOSF implements Scheduler {
 			for(int j=0;j<Parameters.vmTypeNumber-1;j++) {
 				double predicteStartTime = calculatePredicateStartTime(scheduleTask, null);
 				double executeTimeWithDeviation =  scheduleTask.getBaseExecuteTime() + scheduleTask.getBaseExecuteTime()*Parameters.standardDeviation;
-				double perExecuteTime = executeTimeWithDeviation*Parameters.speedFactor[j]; //The predicted execute time of scheduleTask on vm
+				double perExecuteTime = executeTimeWithDeviation*Parameters.speedFactor[j]; //The predicted execute time of scheduleTask on VM
 				double preFinishTime = Parameters.launchTime + predicteStartTime + perExecuteTime;
 				double preCost = perExecuteTime * Parameters.prices[j];
 				if(preFinishTime<=scheduleTask.getSubDeadline()) {
@@ -583,8 +561,8 @@ public class NOSF implements Scheduler {
 				activeVMList.add(selectVM);
 			}
 			
-			if(selectVM.getExecuteTask().getTaskID().equals("init")) { //The vm has no execute task
-				//Update vm's and scheduleTask's parameters
+			if(selectVM.getExecuteTask().getTaskID().equals("init")) { //The VM has no execute task
+				//Update VM's and scheduleTask's parameters
 				double actualStartTime = calculateActualStartTime(scheduleTask, selectVM);
 				double actualExecuteTime = scheduleTask.getBaseExecuteTimeWithDeviation()*selectVM.getVMExecuteTimeFactor();
 				double actualFinishTime = actualStartTime + actualExecuteTime;
@@ -594,10 +572,10 @@ public class NOSF implements Scheduler {
 				
 				selectVM.setExecuteTask(scheduleTask);
 			}
-			else {
+			else { //Set the scheduleTask as a wait task
 				double predicteStartTime = calculatePredicateStartTime(scheduleTask, selectVM);
 				double executeTimeWithDeviation =  scheduleTask.getBaseExecuteTime() + scheduleTask.getBaseExecuteTime()*Parameters.standardDeviation;
-				double predicteExecuteTime = executeTimeWithDeviation*selectVM.getVMExecuteTimeFactor(); //Use base execute time to calculate predicte execute time
+				double predicteExecuteTime = executeTimeWithDeviation*selectVM.getVMExecuteTimeFactor(); 
 				double predicteFinishTime = predicteStartTime + predicteExecuteTime;
 				scheduleTask.setPredictStartTime(predicteStartTime);
 				scheduleTask.setPredictFinishTime(predicteFinishTime);
@@ -608,17 +586,17 @@ public class NOSF implements Scheduler {
 			scheduleTask.setAssignedVM(selectVM);
 			scheduleTask.setIsAssigned(true);
 		}
-		scheduledTaskList.addAll(scheduledTaskList);
+		scheduledTaskList.addAll(taskList);
 	}
 	
 	/**Calculate the predicate start time for a task on a VM, need consider the transfer data whether assigned on the same VM*/
 	public double calculatePredicateStartTime(Task task, VM vm) {
-		double actualStartTime = currentTime;
+		double predictStartTime = currentTime;
 		
 		//Calculate the predicated start time by scheduleTask' parent
 		for(Edge inEdge : task.getInEdges()) {
 			Task parent = inEdge.getParentTask();
-			if(!parent.getIsFinished()) { //Check the parent is finished or not, because a task can be scheduled only all its parent had finished
+			if(!parent.getIsFinished()) { //Check the parent is finished or not
 				throw new IllegalArgumentException("A parent of the schedule Task is not finished!");
 			}
 			VM parentTaskVM = parent.getAssignedVM();
@@ -631,31 +609,31 @@ public class NOSF implements Scheduler {
 				maxParentTransTime = parent.getActualFinishTime() + ((1+Parameters.standardDeviationData)*inEdge.getTransDataSize())/Parameters.bandwidth;
 			}
 			
-			if(actualStartTime < maxParentTransTime ) { //Set the max transfer data time of scheduleTask's parent as the min start time
-				actualStartTime = maxParentTransTime; 
+			if(predictStartTime < maxParentTransTime ) { //Set the max transfer data time of scheduleTask's parent as the min start time
+				predictStartTime = maxParentTransTime; 
 			}
 		}
 		
 		//Calculate the available time of vm
 		if(vm !=null) {
-			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The vm has an execute task
-				if(vm.getWaitTask().getTaskID().equals("init")) { //The vm has no wait task
-					if(actualStartTime < vm.getExecuteTask().getActualFinishTime()) { //An execute taks must has actual start/execute/finish time
-						actualStartTime = vm.getExecuteTask().getActualFinishTime();
+			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The VM has an execute task
+				if(vm.getWaitTask().getTaskID().equals("init")) { //The VM has no wait task
+					if(predictStartTime < vm.getExecuteTask().getActualFinishTime()) { //An execute task must has actual start/execute/finish time
+						predictStartTime = vm.getExecuteTask().getActualFinishTime();
 					}
 				}
 				else {
-					actualStartTime =  vm.getWaitTask().getPredictFinishTime();
+					predictStartTime =  vm.getWaitTask().getPredictFinishTime();
 				}
 			}
-			else { //The vm is idle
-				if(actualStartTime < vm.getLeaseStartTime()) {
-					actualStartTime = vm.getLeaseStartTime();
+			else { //The VM is idle
+				if(predictStartTime < vm.getLeaseStartTime()) {
+					predictStartTime = vm.getLeaseStartTime();
 				}
 			}
 		}
 				
-		return actualStartTime;
+		return predictStartTime;
 	}
 	
 	/**Calculate the actual start time for a task on a VM, need consider the transfer data whether assigned on the same VM*/
@@ -683,19 +661,12 @@ public class NOSF implements Scheduler {
 			}
 		}
 		
-		//Calculate the available time of vm
+		//Calculate the available time of VM
 		if(vm !=null) {
-			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The vm has an execute task
-				if(vm.getWaitTask().getTaskID().equals("init")) { //The vm has no wait task
-					if(actualStartTime < vm.getExecuteTask().getActualFinishTime()) { //An execute taks must has actual start/execute/finish time
-						actualStartTime = vm.getExecuteTask().getActualFinishTime();
-					}
-				}
-				else {
-					actualStartTime =  vm.getWaitTask().getPredictFinishTime();
-				}
+			if(!vm.getExecuteTask().getTaskID().equals("init")) { //This cannot happen when calculate the actual start time of task if the VM has an execute task
+				throw new IllegalArgumentException("A assigned VM has a execute task!");
 			}
-			else { //The vm is idle
+			else { //The VM is idle
 				if(actualStartTime < vm.getLeaseStartTime()) {
 					actualStartTime = vm.getLeaseStartTime();
 				}
@@ -713,7 +684,7 @@ public class NOSF implements Scheduler {
 		//Calculate the predicated start time by scheduleTask' parent
 		for(Edge inEdge : task.getInEdges()) {
 			Task parent = inEdge.getParentTask();
-			if(!parent.getIsFinished()) { //Check the parent is finished or not, because a task can be scheduled only all its parent had finished
+			if(!parent.getIsFinished()) { //Check the parent is finished or not
 				throw new IllegalArgumentException("A parent of the schedule Task is not finished!");
 			}
 			VM parentTaskVM = parent.getAssignedVM();
@@ -731,11 +702,11 @@ public class NOSF implements Scheduler {
 			}
 		}
 		
-		//Calculate the available time of vm
+		//Calculate the available time of VM
 		if(vm !=null) {
-			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The vm has an execute task
-				if(vm.getWaitTask().getTaskID().equals("init")) { //The vm has no wait task
-					if(vmAvailableTime < vm.getExecuteTask().getActualFinishTime()) { //An execute taks must has actual start/execute/finish time
+			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The VM has an execute task
+				if(vm.getWaitTask().getTaskID().equals("init")) { //The VM has no wait task
+					if(vmAvailableTime < vm.getExecuteTask().getActualFinishTime()) { //An execute task must has actual start/execute/finish time
 						vmAvailableTime = vm.getExecuteTask().getActualFinishTime();
 					}
 				}
@@ -743,7 +714,7 @@ public class NOSF implements Scheduler {
 					vmAvailableTime =  vm.getWaitTask().getPredictFinishTime();
 				}
 			}
-			else { //The vm is idle
+			else { //The VM is idle
 				if(vmAvailableTime < vm.getLeaseStartTime()) {
 					vmAvailableTime = vm.getLeaseStartTime();
 				}

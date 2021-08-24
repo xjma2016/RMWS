@@ -2,23 +2,23 @@ package cloud.components;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
+@SuppressWarnings("serial")
 public class Task implements Serializable {
 	private final String taskID; //The task's ID
-	private int taskWorkflowID; //The workflow's ID, where task belongs to
+	private int taskWorkflowID; //The workflow's ID which the task belongs to
 	
 	private double baseExecuteTime; //The task's base execution time, get from the DAX file
 	private double baseExecuteTimeWithDeviation; //The deviate base execution time of the task, only can be get when execute on a VM even if it is calculated by normal distribution at the schedule init phase
 		
-	private double latestStartTime; //The task's lateset start time, calculate by the workflow's deadline and the fastest VM
-	private double latestFinishTime; //The task's lateset finish time, calculate by the workflow's deadline and the fastest VM
+	private double latestStartTime; //The task's latest start time, calculate by the workflow's deadline and the fastest VM
+	private double latestFinishTime; //The task's latest finish time, calculate by the workflow's deadline and the fastest VM
 	private double pUpwardRank; //The task's probabilistic upward rank
 	private double subDeadline; //The task's subdeadline
 	
-	private double predictStartTime; //The task's predicte start time when as a wait task assigned on a VM
-	private double predictFinishTime; //The task's predicte finish time when as a wait task assigned on a VM
+	private double predictStartTime; //The task's predict start time when as a wait task assigned on a VM
+	private double predictFinishTime; //The task's predict finish time when as a wait task assigned on a VM
 	
 	private double actualStartTime; //The task's actual start time, only can be get after the task is execute on a VM
 	private double actualExecuteTime; //The task's actual execute time, calculate by baseExecutionTimeWithDeviation*VMFactor
@@ -26,20 +26,20 @@ public class Task implements Serializable {
 	
 	private boolean isAssigned; //Whether this task has been assigned
 	private VM assignedVM; //The assigned VM 
-	private boolean isFinished; //whether this task has been finished
+	private boolean isFinished; //Whether this task has been finished
 	
 	private List<Edge> inEdges; //The in edges set, includes all the immediate predecessors
 	private List<Edge> outEdges; //The out edges set, includes all the immediate successors
 	
 	/** Only used in ROSA*/
-	private double predictLatestStartTime; //The task's predicte latest start time
-	private double predictLatestFinishTime; //Not Used. The task's predicte latest finish time
+	private double predictLatestStartTime; //The task's predict latest start time
+	private double predictLatestFinishTime; //The task's predict latest finish time, not used 
+	private double allowExecutionTime; //The task's allow execute time
 	
 	/** Only used in NOSF*/
 	private double earliestStartTime; //The task's earliest start time, only can be get after the task is execute on a VM
 	private double earliestFinishTime; //The task's earliest finish time, calculate by baseExecutionTimeWithDeviation*VMFactor
 	private double thelta; //The difference between subdeadline and earliestStartTime
-		
 	
 	public Task(String taskID, int taskWorkflowID,  double baseExecuteTime) {
 		this.taskID  = taskID;
@@ -69,6 +69,7 @@ public class Task implements Serializable {
 		
 		this.predictLatestStartTime = -1;
 		this.predictLatestFinishTime = -1;
+		this.allowExecutionTime = -1;
 		
 		this.earliestStartTime = -1;
 		this.earliestFinishTime = -1;
@@ -205,6 +206,13 @@ public class Task implements Serializable {
 	}
 	public double setPredictLatestFinishTime(double predictLatestFinishTime) {
 		return this.predictLatestFinishTime = predictLatestFinishTime;
+	}
+	
+	public double getAllowExecutionTime() {
+		return allowExecutionTime;
+	}
+	public double setAllowExecutionTime(double allowExecutionTime) {
+		return this.allowExecutionTime = allowExecutionTime;
 	}
 	
 	public double getEarliestStartTime() {

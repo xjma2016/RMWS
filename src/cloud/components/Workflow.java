@@ -4,6 +4,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
+@SuppressWarnings("serial")
 public class Workflow implements Serializable, Cloneable
 {
 	private int workflowId; //Workflow's ID, used to distinguish different workflows
@@ -13,7 +14,7 @@ public class Workflow implements Serializable, Cloneable
 	private double deadline; //Workflows's deadline, the finish time if assigned all tasks on the fastest VM and ignored the data transfer time
 	
 	private List<Task> taskList; //The list set to store all tasks in workflow
-	private List<Edge> edgeList; // The list set to store all edges in workflow
+	private List<Edge> edgeList; //The list set to store all edges in workflow
 	private boolean startedFlag; //Whether this workflow start to be allocated
 	private double finishTime;   //Workflow's finish time
 	private boolean successFlag; //Whether this workflow is finished before deadline

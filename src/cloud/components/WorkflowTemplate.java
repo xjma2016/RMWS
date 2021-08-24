@@ -1,12 +1,9 @@
 package cloud.components;
 
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Stack;
@@ -18,11 +15,9 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import cloud.configurations.Parameters;
 
-
 public class WorkflowTemplate {
 	private static final String[] WORKFLOWTYPE = {"CYBERSHAKE","LIGO","GENOME","SIPHT"}; //The workflow's type "CYBERSHAKE","LIGO","GENOME","SIPHT" "MONTAGE"
 	private static final int[] WORKFLOWNUM = {50,200,1000}; //The workflow's number 50,200,1000
-	private static final String file_location = "D:\\mxj\\Eclipse_Project\\DataSet\\dax"; //The workflow's DAX files location
 	private static final String workflowTemplateFile = "workflowTemplate.txt"; //The workflow template's txt file
 		
 	private int workflowID = 0; //Use 1-12 indicate the 12 workflow template
@@ -45,7 +40,7 @@ public class WorkflowTemplate {
 				nameTaskMapping = new HashMap<String, Task>();
 				transferData = new HashMap<Task, List<TransferData>>();
 				
-				file = file_location + "\\" + workflowType + "\\" + workflowType + ".n." + workflowNum + "." + 1 + ".dax";
+				file = Parameters.file_location + "\\" + workflowType + "\\" + workflowType + ".n." + workflowNum + "." + 1 + ".dax";
 				workflowID++;
 				workflowName = workflowType + "-" + workflowNum;
 							

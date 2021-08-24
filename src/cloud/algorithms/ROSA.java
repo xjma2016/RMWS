@@ -4,8 +4,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 
 import cloud.components.*;
@@ -25,6 +23,8 @@ public class ROSA implements Scheduler {
 	private double currentTime; //The current time in the scheduling process
 	
 	List<Task> scheduledTaskList ;
+	Check check = new Check();
+	
 	SimpleDateFormat cTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"); //Current Time	
 	public void schedule(List<Workflow> workflowList) {
 		//Initialize
@@ -32,25 +32,16 @@ public class ROSA implements Scheduler {
 		
 		//Record the runtime of scheduling algorithm
 		long totalScheduleTime = 0;
-		long startTime01 = System.currentTimeMillis();
-			    
-		//Calculate the latest start/finish time, subdeadline of tasks in the workflow list
-		calculateTaskParameter(experimentWorkflow);	
-		//Check.printText("calculateTaskParameter at: ");	  		
-		//System.out.println("init at: "+cTime.format(new Date()));
-		
-		long endTime01 = System.currentTimeMillis();
-		totalScheduleTime = totalScheduleTime + (endTime01 - startTime01);
 		
 		//Schedule each workflow in workflowList
 		for(int i=0;i<experimentWorkflow.size();i++) {
-			//Set the current time as the ith workflow's arrival time 
+			//Set the current time as the i-th workflow's arrival time 
 			currentTime = experimentWorkflow.get(i).getArrivalTime();
 			
-			//Get the workflows that has the same arrivetime
+			//Get the workflows that has the same arrive time
 			List<Workflow> workflowWithSameArrivetime = new ArrayList<Workflow>();
-			workflowWithSameArrivetime.add(experimentWorkflow.get(i)); //Add the ith workflow
-			for(int j=i+1;j<experimentWorkflow.size();j++) { //Because workflows are ascending by arrivaltime, just compare the workflows after i
+			workflowWithSameArrivetime.add(experimentWorkflow.get(i)); //Add the i-th workflow
+			for(int j=i+1;j<experimentWorkflow.size();j++) { //Because workflows are ascending by arrival time, just compare the workflows after i
 				if(experimentWorkflow.get(j).getArrivalTime() == experimentWorkflow.get(i).getArrivalTime()) {
 					workflowWithSameArrivetime.add(experimentWorkflow.get(j));
 					i++; //Update i to the next workflow that has different arriveTime
@@ -60,17 +51,23 @@ public class ROSA implements Scheduler {
 				}
 			}
 			
+			long startTime01 = System.currentTimeMillis();
+		    
+			//Calculate the latest start/finish time, subdeadline of tasks in the workflow list
+			for(int w=0;w<workflowWithSameArrivetime.size();w++) {
+				Workflow workflow = workflowWithSameArrivetime.get(w); //Get the w-th workflow
+				//List<Task> taskList = workflow.getTaskList();//Get the task list in w-th workflow
+				//calculateTaskParameter(taskList,workflow.getDeadline());	
+				CaculateLeastFinishTimeForWTask(workflow);
+				
+			} 
+			
 			//Get the ready tasks from workflowsWithSameArrivetime
 			readyTaskList = getReadyTask(workflowWithSameArrivetime);
-			Collections.sort(readyTaskList, new compareTaskByPredictLatestStartTime()); //Sort the ready tasks by the preducte latest start time
-			//System.out.println("read task count: "+readyTaskList.size());
-			long startTime02 = System.currentTimeMillis();
+			Collections.sort(readyTaskList, new compareTaskByPredictLatestStartTime()); //Sort the ready tasks by the predict latest start time
 			
 			//Schedule the ready tasks to active VMs or New VMs
 			scheduleTaskToVM(readyTaskList, activeVMList);
-			
-			long endTime02 = System.currentTimeMillis();
-			totalScheduleTime = totalScheduleTime + (endTime02 - startTime02);		
 			
 			//Add all unready tasks into the task pool
 			for(Workflow w : workflowWithSameArrivetime) {
@@ -80,6 +77,9 @@ public class ROSA implements Scheduler {
 					}
 				}
 			}
+			
+			long endTime01 = System.currentTimeMillis();
+			totalScheduleTime = totalScheduleTime + (endTime01 - startTime01);		
 			
 			//Get the next arrival time,
 			double nextArrivalTime = Integer.MAX_VALUE;
@@ -97,15 +97,16 @@ public class ROSA implements Scheduler {
 			for(VM vm : activeVMList) { //VM's status can be classified as: wait task/execute task/idle
 				double actualFinishTime = vm.getExecuteTask().getActualFinishTime(); //The execute task's actual finish time
 				
-				if(actualFinishTime != -1) { //The vm has an execute task, no need to consider the wait task which will be execute once the execute task finished
+				if(actualFinishTime != -1) { //The VM has an execute task
 					if(nextFinishTime > actualFinishTime) {
 						nextFinishTime = actualFinishTime;
 						nextFinishVM = vm;
 					}
 				}
-				else { //The vm is idle
+				else { //The VM is idle
+					//Set the release time when the whole lease time is integer multiple of unitTime
 					double tempNextReleaseTime = Integer.MAX_VALUE;
-					if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { //The vm will be released when the whole lease time is integer multiple of unitTime
+					if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { 
 						tempNextReleaseTime = currentTime;
 					}
 					else { //Set the next integer multiple of unit time as the next release time
@@ -123,12 +124,14 @@ public class ROSA implements Scheduler {
 			while(nextArrivalTime >= nextFinishTime || nextArrivalTime > nextReleaseTime) {
 				//update the VM and its execute task, which have the min finish time
 				if(nextFinishTime <= nextReleaseTime) {
+					//Set the execute task as finished
 					Task nextFinishTask = nextFinishVM.getExecuteTask();
 					nextFinishTask.setIsFinished(true);
+					nextFinishVM.setExecuteTask(new Task("init", -1, -1));
 					currentTime = nextFinishTask.getActualFinishTime(); //Set the current time as the next finish time
 					
 					if(nextFinishVM.getWaitTaskList().size() > 0) { //The next finish VM has wait tasks, then execute it
-						Task nextExecuteTask = nextFinishVM.getWaitTaskList().get(0);
+						Task nextExecuteTask = nextFinishVM.getWaitTaskList().get(0); //Execute the first wait task
 						double nextStartTime = calculateActualStartTime(nextExecuteTask, nextFinishVM); //Get the actual start time of next execute task
 						double nextExecuteTime = nextExecuteTask.getBaseExecuteTimeWithDeviation()*nextFinishVM.getVMExecuteTimeFactor();
 						nextExecuteTask.setActualStartTime(nextStartTime);
@@ -136,23 +139,24 @@ public class ROSA implements Scheduler {
 						nextExecuteTask.setActualFinishTime(nextStartTime+nextExecuteTime);
 						nextFinishVM.setExecuteTask(nextExecuteTask);
 						nextFinishVM.getWaitTaskList().remove(nextExecuteTask);
+						
 					}
 					else { //The next finish VM has no wait task
 						nextFinishVM.setExecuteTask(new Task("init", -1, -1));
 					}
 					
+					long startTime02 = System.currentTimeMillis();
+					
 					//Get the ready children of the next finish task
 					List<Task> readySucessorList = getReadySucessor(nextFinishTask);
-					
-					long startTime03 = System.currentTimeMillis();
 					
 					//Schedule the ready tasks to active VMs or New VMs, and move them from task pool
 					scheduleTaskToVM(readySucessorList, activeVMList);
 					
-					long endTime03 = System.currentTimeMillis();
-					totalScheduleTime = totalScheduleTime + (endTime03 - startTime03);
-					
 					taskPool.removeAll(readySucessorList);
+					
+					long endTime02 = System.currentTimeMillis();
+					totalScheduleTime = totalScheduleTime + (endTime02 - startTime02);
 				}
 				
 				//Release VM
@@ -177,7 +181,7 @@ public class ROSA implements Scheduler {
 				nextReleaseVM = null; //The VM that will be released firstly
 				nextReleaseTime = Integer.MAX_VALUE; //The firstly released time
 				
-				//Get the above four parameters in the active VM list
+				//Re-update the above four parameters in the active VM list
 				for(VM vm : activeVMList) { //VM's status can be classified as: wait task/execute task/idle
 					double actualFinishTime = vm.getExecuteTask().getActualFinishTime(); //The execute task's actual finish time
 					
@@ -187,9 +191,10 @@ public class ROSA implements Scheduler {
 							nextFinishVM = vm;
 						}
 					}
-					else { //The vm is idle
+					else { //The VM is idle
+						//Set the release time when the whole lease time is integer multiple of unitTime
 						double tempNextReleaseTime = Integer.MAX_VALUE;
-						if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { //The vm will be released when the whole lease time is integer multiple of unitTime
+						if((currentTime - vm.getLeaseStartTime())%Parameters.unitTime == 0) { 
 							tempNextReleaseTime = currentTime;
 						}
 						else { //Set the next integer multiple of unit time as the next release time
@@ -201,7 +206,7 @@ public class ROSA implements Scheduler {
 							nextReleaseVM = vm;
 						}
 					}
-				} //End for, get the four parameters
+				} //End for, Re-update the four parameters
 				
 				//End while if can not find a next finish/release VM before nextArrivalTime, 
 				if(nextArrivalTime==Integer.MAX_VALUE && nextFinishTime==Integer.MAX_VALUE && nextReleaseTime==Integer.MAX_VALUE) {
@@ -213,7 +218,7 @@ public class ROSA implements Scheduler {
 		} //End for, schedule each workflow in workflowList
 		
 		//Check the tasks and VMs status
-		Check.checkUnfinishTaskAndVM(experimentWorkflow,allLeaseVMList);
+		check.checkUnfinishTaskAndVM(experimentWorkflow,allLeaseVMList);
 		
 		//Calculate the experimental results
 		ExperimentResult.calculateExperimentResult("ROSA", allLeaseVMList, experimentWorkflow, totalScheduleTime);
@@ -230,7 +235,7 @@ public class ROSA implements Scheduler {
 	
 	/**Calculate the latest start/finish time, subdeadline of tasks in workflow list*/
 	
-    /**Init the global parameter, generate deviation values of task base execution time and base transfer data*/
+    /**Init the lists*/
 	public void init(List<Workflow> workflowList) {
 		this.experimentWorkflow = workflowList;
 		taskPool = new ArrayList<Task>(); 
@@ -240,153 +245,202 @@ public class ROSA implements Scheduler {
 	    scheduledTaskList  =new ArrayList<Task>();
 	}
 	
-	/**Calculate the predicte latest start/finish time of tasks in the workflow list*/
-	public void calculateTaskParameter(List<Workflow> workflowList) {
-		int fastestVMType = Parameters.speedFactor.length - 1;
-		for(int i=0;i<workflowList.size();i++) { 
-			Workflow workflow = workflowList.get(i); //Get the ith workflow
-			double deadLine = workflow.getDeadline(); //Get the deadline of ith workflow
-			List<Task> taskList = workflow.getTaskList();//Get the task list in ith workflow
+	/**Calculate the least finish time for each workflow task, used from the ROSA code*/
+	public void CaculateLeastFinishTimeForWTask(Workflow tempWorkflow)
+	{
+		
+		//Test from the type of service instance with lower capacity
+		for(int f=0; f<Parameters.speedFactor.length; f++)
+		{
+			double factor = Parameters.speedFactor[f];
 			
-			int calculateNum = 0; //Store the number of calculate tasks
-			while(calculateNum < taskList.size()) {
-				for(int j=taskList.size()-1;j>=0;j--) { //Calculate task's predicte latest start/finish time from the exit task to the entry task
-					Task t = taskList.get(j);
-					if(t.getOutEdges().size() == 0) { //The exit task
-						//Calculate task's latest start/finish time
-						//double executeTimeWithDeviation =  t.getBaseExecuteTime() +  t.getBaseExecuteTime()*Parameters.standardDeviation;
-						double fastestExecuteTime =  t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType];
-						double plft = deadLine - Parameters.launchTime;
-						t.setPredictLatestFinishTime(plft); 
-						t.setPredictLatestStartTime(plft - fastestExecuteTime);
-						calculateNum++;
-					}
-					else { //The task has child
-						double minLatestFinishTime = Integer.MAX_VALUE; //Store the min start time of task t
-						boolean isAllChildrenCalculated = true; //Check if all children of task t have been calculated
-						//double executeTimeWithDeviation =  t.getBaseExecuteTime() +  t.getBaseExecuteTime()*Parameters.standardDeviation;
-						double fastestExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType];
-						for(Edge e : t.getOutEdges()) { //Find the calculated child of t
-							if(e.getChildTask().getPredictLatestStartTime() == -1) {
-								isAllChildrenCalculated = false;
-							}
+			//Calculate the least start and finish time of each task
+			CalculateTaskLeastStartAndFinishTime(tempWorkflow, factor);
+			
+			double leastFinishTime = 0; //The least finish time of the workflow
+			for(Task cTask: tempWorkflow.getTaskList())
+			{
+				if(cTask.getPredictLatestFinishTime() > leastFinishTime)
+				{
+					leastFinishTime = cTask.getPredictLatestFinishTime();
+				}
+			}
+			
+			//If the least finish time of the workflow is less than its deadline
+			if(leastFinishTime <= tempWorkflow.getDeadline())
+			{
+				//The laxity time between the deadline and the least finish time
+				double laxity = tempWorkflow.getDeadline() - leastFinishTime;
+				for(Task task: tempWorkflow.getTaskList())
+				{
+					double tempExecutionTime = task.getPredictLatestFinishTime() - task.getPredictLatestStartTime();
+					tempExecutionTime = tempExecutionTime + laxity*((factor*task.getBaseExecuteTime()*Parameters.standardDeviation)/(leastFinishTime-currentTime));
+					task.setAllowExecutionTime(tempExecutionTime);
+					
+				}
+				
+				
+				List<Task> calculatedTaskList = new ArrayList<Task>();
+				while(true)
+				{
+					for(Task task: tempWorkflow.getTaskList())// Check all the tasks
+					{
+						if(task.getSubDeadline() > -1) 
+						{
+							continue;
 						}
 						
-						if(isAllChildrenCalculated) { //If all children of task t have been calculated, calculated t' predicte latest start/finish time
-							for(Edge e : t.getOutEdges()) { //Caculate min predicte start time from each child
-								//double baseTransferDateTime = (e.getTransDataSize() + e.getTransDataSize()*Parameters.standardDeviationData)/Parameters.bandwidth;
-								double baseTransferDateTime = e.getTransDataSize()/Parameters.bandwidth;
-								double tempLatestFinishTime = e.getChildTask().getPredictLatestStartTime() - baseTransferDateTime; 
-								if(minLatestFinishTime > tempLatestFinishTime) {
-									minLatestFinishTime = tempLatestFinishTime;
+						double executionTime = task.getAllowExecutionTime(); 	
+						if(task.getInEdges().size() == 0)
+						{// The task without predecessor
+							task.setSubDeadline(currentTime+executionTime);
+							calculatedTaskList.add(task);
+						}
+						else 
+						{// The task has predecessors
+							double maxDataSize = 0; // The size of data that needs to be transfered
+							for(Edge e : task.getInEdges())
+							{
+								if(e.getTransDataSize()*Parameters.standardDeviationData > maxDataSize)
+								{
+									maxDataSize = e.getTransDataSize()*Parameters.standardDeviationData;							
 								}
 							}
-							t.setPredictLatestFinishTime(minLatestFinishTime); 
-							t.setPredictLatestStartTime(minLatestFinishTime - fastestExecuteTime);
-							calculateNum++;
-						} //End if
-					} //End else
-				} //End for
-			} //End while
-		} //End for, each workflow in the list
-	}
-	
-	/**Calculate the latest start/finish time, subdeadline of Successor for a finished taskin the workflow list*/
-	public void calculateSuccessorParameter(List<Task> successorList, double workflowDeadline) {
-		int fastestVMType = Parameters.speedFactor.length - 1;
-		int calculateNum = 0; //Store the number of calculate tasks
-		while(calculateNum < successorList.size()) {
-			for(int j=successorList.size()-1;j>=0;j--) { //Calculate task's latest start/finish time/PUR from the exit task to the entry task
-				Task t = successorList.get(j);
-				if(t.getOutEdges().size() == 0) { //The exit task
-					//Calculate task's latest start/finish time
-					t.setLatestFinishTime(workflowDeadline); //Set the exit task's latest finish time as the workflow's deadline
-					//double executeTimeWithDeviation =  t.getBaseExecuteTime() +  t.getBaseExecuteTime()*Parameters.standardDeviation;
-					double fastestExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType];
-					if(t.getLatestFinishTime() <= fastestExecuteTime) {
-						//throw new IllegalArgumentException("Task's latest finish time is no more than the fastest execute time!");
-					}
-					t.setLatestStartTime(t.getLatestFinishTime() - fastestExecuteTime);
-					
-					//Set task's probabilistic upward rank as the fastest execute time
-					t.setPUpwardRank(fastestExecuteTime);
-					
-					calculateNum++;
-				}
-				else { //The task has child
-					double minLatestFinishTime = Integer.MAX_VALUE; //Store the min start time of task t
-					boolean isAllChildrenCalculated = true; //Check if all children of task t have been calculated
-					
-					double maxPURAndTT = -1; //Store the max sum of pUpwardRand and transfer data time between t and t's child
-					double fastestExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; //The fastest execute time of t
-					double randomNum = Math.random();
-					
-					for(Edge e : t.getOutEdges()) { //Find the calculated child of t
-						if(e.getChildTask().getLatestStartTime() == -1) {
-							isAllChildrenCalculated = false;
-						}
-					}
-					
-					if(isAllChildrenCalculated) { //If all children of task t have been calculated, calculated t' latest start/finish time, pUpwardRank
-						for(Edge e : t.getOutEdges()) { //Caculate min start time from each child
-							double baseTransferDateTime = e.getTransDataSize()/Parameters.bandwidth;
-							double tempLatestFinishTime = e.getChildTask().getLatestStartTime() - baseTransferDateTime; 
-							if(minLatestFinishTime > tempLatestFinishTime) {
-								minLatestFinishTime = tempLatestFinishTime;
+							//Data transfer time
+							double commDelay = maxDataSize/Parameters.bandwidth;
+							
+							double maxStartTime = -1; //Least start time
+							boolean unCalculatedParent = false; // Whether all the predecessors have been calculated
+							for(Edge e : task.getInEdges())
+							{//If all the predecessors have been calculated, calculate the start time
+								if(e.getParentTask().getSubDeadline() > -1)
+								{
+									double startTime = e.getParentTask().getSubDeadline() + commDelay;
+									if(startTime > maxStartTime)
+									{
+										maxStartTime = startTime;
+									}
+								}
+								else
+								{//There exist predecessors that are not calculated
+									unCalculatedParent = true;
+									break;
+								}						
 							}
 							
-							double ccr = -(fastestExecuteTime/baseTransferDateTime); //Store the ratio of computation to communication ratio
-							double eta = 1;
-							double tempEta = 1 - Math.pow(Parameters.theta, ccr);
-							if(tempEta < randomNum) {
-								eta = 0;
-							}
-							double tempPURAndTT = e.getChildTask().getPUpwardRank() + eta*baseTransferDateTime;
-							if(maxPURAndTT < tempPURAndTT) {
-								maxPURAndTT = tempPURAndTT;
-							}
-						}
-						
-						t.setLatestFinishTime(minLatestFinishTime); //Set the task's latest finish time as the min latest finishTime
-						if(t.getLatestFinishTime() <= fastestExecuteTime) {
-							//double test = -1;
-							//throw new IllegalArgumentException("Task's latest finish time is no more than the fastest execute time!");
-						}
-						t.setLatestStartTime(minLatestFinishTime - fastestExecuteTime);
-						
-						//Set task's probabilistic upward rank as the fastest execute time add maxPURAndTT
-						t.setPUpwardRank(maxPURAndTT + fastestExecuteTime);
-						
-						calculateNum++;
-					} //End if
-				} //End else
-			} //End for
-		} //End while
-	
-		//Calculate the task's subdeadline
-		double maxEntryTaskPUK = -1; //Store the max entry task's PUK
-		
-		for(int k=0;k<successorList.size();k++) {
-			Task entryTask = successorList.get(k);
-			if(entryTask.getInEdges().size() == 0) { //The entry task
-				double tempPUK = entryTask.getPUpwardRank();
-				if(maxEntryTaskPUK < tempPUK) {
-					maxEntryTaskPUK = tempPUK;
+							if(unCalculatedParent == false)
+							{								
+								task.setSubDeadline(maxStartTime + executionTime);
+								calculatedTaskList.add(task);
+							}																															
+						}//end else
+					}//end for(Task task: cWorkflow.getTaskList()) 
+					
+					if(calculatedTaskList.size() == tempWorkflow.getTaskList().size())
+					{
+						break;
+					}
+				}//end while
+				
+				break;
+			}
+			else // If the least finish time of the workflow is larger than its deadline
+			{
+				// Try next type of service instance with higher capacity
+				if(f == Parameters.speedFactor.length-1)
+				{// If this type of service instance has the highest capacity
+					for(Task task: tempWorkflow.getTaskList())
+					{
+						task.setSubDeadline(task.getPredictFinishTime());
+					}
 				}
-			}
+				else
+				{//Clear the least start/finish time
+					for(Task task: tempWorkflow.getTaskList())//Check all the tasks
+					{
+						task.setPredictLatestStartTime(-1);
+						task.setPredictLatestFinishTime(-1);
+					}
+				}	
+			}	
 		}
 		
-		for(int k=0;k<successorList.size();k++) {
-			Task t = successorList.get(k);
-			double fastestExecuteTime = t.getBaseExecuteTime()*Parameters.speedFactor[fastestVMType]; //The fastest execute time of t
-			double taskPUK = t.getPUpwardRank();
-			if(taskPUK == -1) {
-				throw new IllegalArgumentException("Task's PUK is not calculate!");
+		for(Task task: tempWorkflow.getTaskList()) // Set the least finish time for each task
+		{
+			task.setPredictLatestFinishTime(task.getSubDeadline());
+		}		
+	} 
+	
+	
+	/**Calculate the least finish and start time for each workflow task*/
+	public void CalculateTaskLeastStartAndFinishTime(Workflow cWorkflow, double factor)
+	{
+		List<Task> calculatedTaskList = new ArrayList<Task>();
+		while(true)
+		{
+			for(Task task: cWorkflow.getTaskList())//Check each task
+			{
+				if(task.getPredictLatestFinishTime()> -1) // If a task has been calculated, then ignores it
+				{
+					continue;
+				}
+				
+				double executionTime = factor*task.getBaseExecuteTime()*Parameters.standardDeviation; //The \alpha-quantile of the execution time
+				if(task.getInEdges().size() == 0)
+				{// For a task without predecessor
+					task.setPredictLatestStartTime(currentTime); //Its start time is set as current time
+					task.setPredictLatestFinishTime(currentTime+executionTime);
+					calculatedTaskList.add(task);
+				}
+				else //For a task having predecessors
+				{	
+					//Determine the size of data that needs to be transfered
+					double maxDataSize = 0;
+					for(Edge e : task.getInEdges())
+					{
+						if(e.getTransDataSize()*Parameters.standardDeviationData > maxDataSize)
+						{
+							maxDataSize = e.getTransDataSize()*Parameters.standardDeviationData;							
+						}
+					}
+					//The data transfer time
+					double commDelay = maxDataSize/Parameters.bandwidth;
+					
+					double maxStartTime = -1; //The least start time
+					boolean unCalculatedParent = false; //Whether exists un-calculated predecessors
+					for(Edge e : task.getInEdges())
+					{//Check whether all the predecessors of this task have been calculated
+						if(e.getParentTask().getPredictLatestFinishTime()>-1)
+						{
+							double startTime = e.getParentTask().getPredictLatestFinishTime() + commDelay;
+							if(startTime > maxStartTime)
+							{
+								maxStartTime = startTime;
+							}
+						}
+						else
+						{//If there exist un-calculated predecessors
+							unCalculatedParent = true;
+							break;
+						}						
+					}
+					
+					if(unCalculatedParent == false)
+					{//If all the predecessors of this task have been calculated, then calculate the start/finish time for this task
+						task.setPredictLatestStartTime(maxStartTime);
+						task.setPredictLatestFinishTime(maxStartTime+executionTime);
+						calculatedTaskList.add(task);
+					}																															
+				}//end else
+			}//end for(Task task: cWorkflow.getTaskList()) 
+			
+			if(calculatedTaskList.size() == cWorkflow.getTaskList().size())
+			{// If all the tasks in this workflow have been calculated, then stop
+				break;
 			}
-			double taskSubDeadline = workflowDeadline*((maxEntryTaskPUK - taskPUK + fastestExecuteTime)/maxEntryTaskPUK); //Calculate the task's subdeadline
-			t.setSubDeadline(taskSubDeadline);
-		}
-	}
+		}//end while
+		
+	}	
 	
 	/**Get the ready tasks from a workflow list*/
 	public List<Task> getReadyTask(List<Workflow> workflowList) {
@@ -401,7 +455,7 @@ public class ROSA implements Scheduler {
 		return readyTaskList;
 	}
 	
-	/**Compare two task by their predicte latest start time*/
+	/**Compare two task by their predicted latest start time*/
 	public class compareTaskByPredictLatestStartTime implements Comparator<Task>{
 		public int compare(Task t1, Task t2) {
 			if(t1.getPredictLatestStartTime() > t2.getPredictLatestStartTime())
@@ -422,18 +476,18 @@ public class ROSA implements Scheduler {
 	/**Schedule tasks in a list to active VMs or new VMs, which has the min lease cost under the predicte latest finish time*/
 	public void scheduleTaskToVM(List<Task> taskList, List<VM> activeVMList) {
 		for(int i=0;i<taskList.size();i++) {
-			Task scheduleTask = taskList.get(i); //The selected the task
+			Task scheduleTask = taskList.get(i); //Selected the task
 			double minCost = Double.MAX_VALUE; //Store the min cost while select a VM
 			VM selectVM = null; //The selected VM
 			int selectVMType = -1; //The selected VM type 
 			
 			//Calculate the task's predicated finish time and cost on active VM
 			for(VM vm : activeVMList) {
-				double activeVMStartTime = calculatePredicateStartTime(scheduleTask,vm); //Get the predicate start time on vm
+				double activeVMStartTime = calculatePredicateStartTime(scheduleTask,vm); //Get the predicate start time on VM
 					
-				//Get the available time of vm
+				//Get the available time of VM
 				double tempAvialableTime = currentTime;
-				if(!vm.getExecuteTask().getTaskID().equals("init")) { //The vm has an execute task
+				if(!vm.getExecuteTask().getTaskID().equals("init")) { //The VM has an execute task
 					if(vm.getWaitTaskList().size() == 0) {
 						tempAvialableTime = vm.getExecuteTask().getActualFinishTime();
 					}
@@ -443,41 +497,40 @@ public class ROSA implements Scheduler {
 					}
 				}
 				
-				//Calculate the predicted lease cost if assign scheduleTask on vm 
+				//Calculate the predicted lease cost if assign scheduleTask on VM 
 				double executeTimeWithDeviation =  scheduleTask.getBaseExecuteTime() +  scheduleTask.getBaseExecuteTime()*Parameters.standardDeviation;
-				double perExecuteTime = executeTimeWithDeviation*vm.getVMExecuteTimeFactor(); //The predicted execute time of scheduleTask on vm
+				double perExecuteTime = executeTimeWithDeviation*vm.getVMExecuteTimeFactor(); //The predicted execute time of scheduleTask on VM
 				double preFinishTime = activeVMStartTime + perExecuteTime;
 				
-				double preLeaseTime = preFinishTime - tempAvialableTime; //The vm's predicted lease time
+				double preLeaseTime = preFinishTime - tempAvialableTime; //The scheduleTask's predicted lease time on VM
 				double preCost = vm.getVMPrice()*preLeaseTime;
 				
-				//Select the vm when has the less cost than a new VM and meet the schedlueTask's subDeadline
+				//Select the VM when has the less cost than a new VM and meet the schedlueTask's subDeadline
 				if(preFinishTime <= scheduleTask.getPredictLatestFinishTime()) {
 					if(minCost >= preCost) {
 						minCost = preCost;
 						selectVM = vm;
 					}
 				}
-				
 			} //End for, find each active VM
 			
 			//Calculate the task's predicated finish time and cost on a new VM
 			for(int j=0;j<Parameters.vmTypeNumber-1;j++) {
 				double predicteStartTime = calculatePredicateStartTime(scheduleTask, null);
 				double executeTimeWithDeviation =  scheduleTask.getBaseExecuteTime() + scheduleTask.getBaseExecuteTime()*Parameters.standardDeviation;
-				double perNewExecuteTime = executeTimeWithDeviation*Parameters.speedFactor[j]; //The predicted execute time of scheduleTask on vm
+				double perNewExecuteTime = executeTimeWithDeviation*Parameters.speedFactor[j]; 
 				double perNewkFinishTime = Parameters.launchTime + predicteStartTime + perNewExecuteTime;
 				double preNewCost = Parameters.speedFactor[j]*perNewExecuteTime;
 				if(perNewkFinishTime<=scheduleTask.getPredictLatestFinishTime()) {
 					if(minCost>preNewCost){ //If find a new VM that has less cost under predicate finish time
 						minCost = preNewCost;
 						selectVMType = j;
-						selectVM = null; 
+						//selectVM = null; //Maybe a mistake in Alg.3 line 12 of ROSA, if set selectVM as null, the tasks will always assign on a new VM 
 					}
 				}
 			}
 			
-			//Set the selectVMType as the fastest type when can find a suitable VM from active VMs or new VMs
+			//Set the selectVMType as the fastest type when can find a suitable VM from active VMs or new VMs, not consider in ROSA
 			if(selectVMType == -1 && selectVM == null) {
 				selectVMType = Parameters.vmTypeNumber-1;
 			}
@@ -492,8 +545,8 @@ public class ROSA implements Scheduler {
 				//System.out.println("Assigned on a active VM" );
 			}
 			
-			if(selectVM.getExecuteTask().getTaskID().equals("init")) { //The vm has no execute task
-				//Update vm's and scheduleTask's parameters
+			//Assign task on the selected VM and update the parameters
+			if(selectVM.getExecuteTask().getTaskID().equals("init")) { //The VM has no execute task
 				double actualStartTime = calculateActualStartTime(scheduleTask, selectVM);
 				double actualExecuteTime = scheduleTask.getBaseExecuteTimeWithDeviation()*selectVM.getVMExecuteTimeFactor();
 				double actualFinishTime = actualStartTime + actualExecuteTime;
@@ -506,7 +559,7 @@ public class ROSA implements Scheduler {
 			else {
 				double predicteStartTime = calculatePredicateStartTime(scheduleTask, selectVM);
 				double executeTimeWithDeviation =  scheduleTask.getBaseExecuteTime() +  scheduleTask.getBaseExecuteTime()*Parameters.standardDeviation;
-				double predicteExecuteTime = executeTimeWithDeviation*selectVM.getVMExecuteTimeFactor(); //Use base execute time to calculate predicte execute time
+				double predicteExecuteTime = executeTimeWithDeviation*selectVM.getVMExecuteTimeFactor(); 
 				double predicteFinishTime = predicteStartTime + predicteExecuteTime;
 				scheduleTask.setPredictStartTime(predicteStartTime);
 				scheduleTask.setPredictFinishTime(predicteFinishTime);
@@ -518,14 +571,13 @@ public class ROSA implements Scheduler {
 			scheduleTask.setIsAssigned(true);
 			
 			//System.out.println("Task#: "+scheduleTask.getTaskID()+" is assigned on VM#: " +selectVM.getVMID());
-			
 		}
-		scheduledTaskList.addAll(scheduledTaskList);
+		scheduledTaskList.addAll(taskList);
 	}
 	
-	/**Calculate the predicate start time for a task on a VM, need consider the transfer data whether assigned on the same VM*/
+	/**Calculate the predicate start time for a task on a VM*/
 	public double calculatePredicateStartTime(Task task, VM vm) {
-		double actualStartTime = currentTime;
+		double predictStartTime = currentTime;
 		
 		//Calculate the predicated start time by scheduleTask' parent
 		for(Edge inEdge : task.getInEdges()) {
@@ -543,39 +595,39 @@ public class ROSA implements Scheduler {
 				maxParentTransTime = parent.getActualFinishTime() + ((1+Parameters.standardDeviationData)*inEdge.getTransDataSize())/Parameters.bandwidth;
 			}
 			
-			if(actualStartTime < maxParentTransTime ) { //Set the max transfer data time of scheduleTask's parent as the min start time
-				actualStartTime = maxParentTransTime; 
+			if(predictStartTime < maxParentTransTime ) { //Set the max transfer data time of scheduleTask's parent as the min start time
+				predictStartTime = maxParentTransTime; 
 			}
 		}
 		
-		//Calculate the available time of vm
+		//Calculate the available time of VM
 		if(vm !=null) {
-			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The vm has an execute task
-				if(vm.getWaitTaskList().size() == 0) { //The vm has no wait task
-					if(actualStartTime < vm.getExecuteTask().getActualFinishTime()) { //An execute taks must has actual start/execute/finish time
-						actualStartTime = vm.getExecuteTask().getActualFinishTime();
+			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The VM has an execute task
+				if(vm.getWaitTaskList().size() == 0) { //The VM has no wait task
+					if(predictStartTime < vm.getExecuteTask().getActualFinishTime()) { //An execute task must has actual start/execute/finish time
+						predictStartTime = vm.getExecuteTask().getActualFinishTime();
 					}
 				}
 				else {
 					int waitTaskNum = vm.getWaitTaskList().size();
-					actualStartTime =  vm.getWaitTaskList().get(waitTaskNum-1).getPredictFinishTime();
+					predictStartTime =  vm.getWaitTaskList().get(waitTaskNum-1).getPredictFinishTime();
 				}
 			}
-			else { //The vm is idle
-				if(actualStartTime < vm.getLeaseStartTime()) {
-					actualStartTime = vm.getLeaseStartTime();
+			else { //The VM is idle
+				if(predictStartTime < vm.getLeaseStartTime()) {
+					predictStartTime = vm.getLeaseStartTime();
 				}
 			}
 		}
 				
-		return actualStartTime;
+		return predictStartTime;
 	}
 	
-	/**Calculate the actual start time for a task on a VM, need consider the transfer data whether assigned on the same VM*/
+	/**Calculate the actual start time for a task on a VM*/
 	public double calculateActualStartTime(Task task, VM vm) {
 		double actualStartTime = currentTime;
 		
-		//Calculate the predicated start time by scheduleTask' parent
+		//Calculate the actual start time by scheduleTask' parent
 		for(Edge inEdge : task.getInEdges()) {
 			Task parent = inEdge.getParentTask();
 			if(!parent.getIsFinished()) { //Check the parent is finished or not, because a task can be scheduled only all its parent had finished
@@ -596,20 +648,12 @@ public class ROSA implements Scheduler {
 			}
 		}
 		
-		//Calculate the available time of vm
+		//Calculate the available time of VM
 		if(vm !=null) {
-			if(!vm.getExecuteTask().getTaskID().equals("init")) { //The vm has an execute task
-				if(vm.getWaitTaskList().size() == 0) { //The vm has no wait task
-					if(actualStartTime < vm.getExecuteTask().getActualFinishTime()) { //An execute taks must has actual start/execute/finish time
-						actualStartTime = vm.getExecuteTask().getActualFinishTime();
-					}
-				}
-				else {
-					int waitTaskNum = vm.getWaitTaskList().size();
-					actualStartTime =  vm.getWaitTaskList().get(waitTaskNum-1).getPredictFinishTime();
-				}
+			if(!vm.getExecuteTask().getTaskID().equals("init")) { 
+				throw new IllegalArgumentException("A assigned VM has a execute task!");
 			}
-			else { //The vm is idle
+			else { //The VM is idle
 				if(actualStartTime < vm.getLeaseStartTime()) {
 					actualStartTime = vm.getLeaseStartTime();
 				}

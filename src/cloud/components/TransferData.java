@@ -2,7 +2,6 @@ package cloud.components;
 
 /**Only used in read DAX file, store a task's all edges in a workflow*/
 public class TransferData { 
-	
 	private String name; //Data file name
 	private long size; //Transfer data size
 	private String link; //Input or output link
@@ -14,7 +13,6 @@ public class TransferData {
 	}
 	
 	//-------------------------------------getters&setters--------------------------------
-	
 	public String getName() {
 		return name;
 	}
@@ -35,4 +33,5 @@ public class TransferData {
 	public void setLink(String link) {
 		this.link = link;
 	}
+	
 }

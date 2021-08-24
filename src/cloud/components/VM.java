@@ -14,10 +14,10 @@ public class VM {
 	private double executeTimeFactor; //The factor for execute time 
 	
 	private double leaseStartTime; //The lease start time 
-	private double leaseFinishTime; //The lease finsh time 
+	private double leaseFinishTime; //The lease finish time 
 	private double totalLeaseCost; //The total leased cost
 	
-	private double availableTime; //Get the Value in diffrent status, 1.New VM: launchTime;2.Wait task: predicted finish time;3.Execute task: actual finish time;4.Idle: current time
+	private double availableTime; //Get the value in different status, 1.new VM: launchTime;2.Wait task: predicted finish time;3.execute task: actual finish time;4.Idle: current time
 		
 	private boolean status; //The on/off status
 	private List<Task> taskList; //The set of assigned tasks
@@ -54,7 +54,6 @@ public class VM {
 	public int getVMID() {
 		return vmID;
 	}
-	
 	public int getVMType() {
 		return vmType;
 	}
