@@ -9,7 +9,7 @@ RMWS is used for the real-time scheduling of multiple workflows in Cloud, and th
  2.cloud.components:The components used in the workflow scheduling;<br> 
  3.cloud.configurations: Parameter configuration used to set the experiment parameters such as the workflow number, DAX files location, VM type, and so on;<br> 
  4.cloud.mainProgram: Start the simulator. <br> 
- 5.DataSet: the input dax files which can be download from "https://confluence.pegasus.isi.edu/display/pegasus/Deprecated+Workflow+Generator";<br> 
+ 5.DataSet: the input dax files which can also be download from "https://confluence.pegasus.isi.edu/display/pegasus/Deprecated+Workflow+Generator";<br> 
  6.Results: the ouput results txt files.<br> 
 
 ### Operation steps of the simulator:
